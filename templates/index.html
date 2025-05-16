@@ -1,61 +1,61 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<title>Cliente-Servidor con Otsu</title>
-<style>
-  img { max-width: 300px; display: block; margin-bottom: 10px; }
-</style>
-<script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
+  <meta charset="UTF-8" />
+  <title>Cliente-Servidor con Otsu</title>
+  <link rel="stylesheet" href="{{url_for('static', filename='home.css')}}" />
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.23.3/full/pyodide.js"></script>
 </head>
 <body>
-<h1>Arquitectura Cliente-Servidor - Otsu</h1>
+  <h1>Arquitectura Cliente-Servidor - Otsu</h1>
 
-<h2>1) Seleccionar imagen del servidor</h2>
-<select id="serverImageSelect">
-  <option value="">--Seleccionar imagen--</option>
-  {% for img in server_images %}
-    <option value="{{ img }}">{{ img }}</option>
-  {% endfor %}
-</select>
-<br/>
-<img id="serverImage" alt="Imagen del servidor" />
-<button onclick="processServerImage()">Procesar Otsu en cliente y enviar al servidor</button>
+  <main>
+    <section id="item-0">
+      <h2>1) Imágenes del servidor</h2>
+      <div id="image-gallery" class="card-image">
+        <select id="serverImageSelect">
+          {% for img in server_images %}
+          <option value="{{ img }}">{{ img }}</option>
+          {% endfor %}
+        </select>
+        <img id="serverImage" alt="Imagen del servidor" />
+      </div>
+      <button onclick="processServerImage()">Procesar Otsu</button>
+    </section>
 
-<hr />
+    <section id="item-1">
+      <h2>2) Seleccionar imagen desde cliente (local)</h2>
+      <div id="drop-image" class="card-image">
+        <input type="file" id="clientImageInput" accept="image/*" />
+        <img id="clientImagePreview" alt="Vista previa cliente" />
+      </div>
+      <button onclick="processClientImage()">Procesar Otsu</button>
+    </section>
 
-<h2>2) Seleccionar imagen desde cliente (local)</h2>
-<input type="file" id="clientImageInput" accept="image/*" />
-<br/>
-<img id="clientImagePreview" alt="Vista previa cliente" />
-<button onclick="processClientImage()">Procesar Otsu y enviar al servidor</button>
+    <section id="item-2">
+      <h2>3) Resultado / mensajes</h2>
+      <div id="result-image" class="card-image">
+        <pre id="output"></pre>
+      </div>
+    </section>
+  </main>
 
-<hr />
+  <script>
+    let pyodide = null;
 
-<h2>3) Resultado / mensajes</h2>
-<pre id="output"></pre>
+    async function loadPyodideAndPackages() {
+      pyodide = await loadPyodide();
+      await pyodide.loadPackage(["numpy", "Pillow", "scipy"]);
+    }
+    loadPyodideAndPackages();
 
-<script>
-let pyodide = null;
+    document.getElementById("serverImageSelect").addEventListener("change", function () {
+      const val = this.value;
+      document.getElementById("serverImage").src = val ? "/server_images/" + val : "";
+    });
 
-async function loadPyodideAndPackages() {
-  pyodide = await loadPyodide();
-  await pyodide.loadPackage(['numpy', 'Pillow', 'scipy']);
-}
-loadPyodideAndPackages();
-
-document.getElementById('serverImageSelect').addEventListener('change', function() {
-  const val = this.value;
-  if(val) {
-    document.getElementById('serverImage').src = '/server_images/' + val;
-  } else {
-    document.getElementById('serverImage').src = '';
-  }
-});
-
-async function processImage(imageDataUrl) {
-  // Python para aplicar Otsu
-  const code = `
+    async function processImage(imageDataUrl) {
+      const code = `
 import io
 from PIL import Image
 import numpy as np
@@ -66,7 +66,6 @@ def otsu_threshold(image_bytes):
     image = Image.open(io.BytesIO(image_bytes)).convert('L')
     img_np = np.array(image)
 
-    # Calcular histograma
     pixel_counts, bin_edges = np.histogram(img_np, bins=256, range=(0,255))
     total = img_np.size
 
@@ -90,119 +89,116 @@ def otsu_threshold(image_bytes):
         mean_background = sum_foreground / weight_background
         mean_foreground = (sum_total - sum_foreground) / weight_foreground
 
-        # varianza entre clases
         var_between = weight_background * weight_foreground * (mean_background - mean_foreground) ** 2
         if var_between > current_max:
             current_max = var_between
             threshold = i
 
-    # Aplicar threshold
     binary = img_np > threshold
     img_out = (binary * 255).astype(np.uint8)
 
-    # Convertir a bytes de imagen PNG
     out_img = Image.fromarray(img_out)
     buf = io.BytesIO()
     out_img.save(buf, format='PNG')
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
-# Decodificar imagen base64 recibida (data:image/png;base64,...)
-img_data = "${imageDataUrl.split(',')[1]}"
+import base64
+img_data = "${imageDataUrl.split(",")[1]}"
 img_bytes = base64.b64decode(img_data)
 
 result = otsu_threshold(img_bytes)
-  `;
-  await pyodide.runPythonAsync(code);
-  const resultBase64 = pyodide.globals.get('result');
+`;
+      await pyodide.runPythonAsync(code);
+      const resultBase64 = pyodide.globals.get("result");
+      return "data:image/png;base64," + resultBase64;
+    }
 
-  // Devuelve data url para mostrar
-  return "data:image/png;base64," + resultBase64;
-}
+    function dataURLtoBlob(dataurl) {
+      const arr = dataurl.split(",");
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) u8arr[n] = bstr.charCodeAt(n);
+      return new Blob([u8arr], { type: mime });
+    }
 
-async function processServerImage() {
-  const imgElem = document.getElementById('serverImage');
-  if(!imgElem.src) {
-    alert("Seleccione una imagen del servidor primero.");
-    return;
-  }
-  // Obtener imagen como dataURL desde servidor
-  const response = await fetch(imgElem.src);
-  const blob = await response.blob();
+    async function processServerImage() {
+      const imgElem = document.getElementById("serverImage");
+      if (!imgElem.src) {
+        alert("Seleccione una imagen del servidor primero.");
+        return;
+      }
 
-  // Convertir blob a dataURL
-  const reader = new FileReader();
-  reader.readAsDataURL(blob);
-  reader.onloadend = async () => {
-    const dataUrl = reader.result;
-    const processedDataUrl = await processImage(dataUrl);
-    document.getElementById('output').textContent = "Imagen procesada con Otsu";
+      const response = await fetch(imgElem.src);
+      const blob = await response.blob();
 
-    // Mostrar imagen procesada
-    const imgProc = new Image();
-    imgProc.src = processedDataUrl;
-    document.body.appendChild(imgProc);
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const dataUrl = reader.result;
+        const processedDataUrl = await processImage(dataUrl);
+        document.getElementById("output").textContent = "Imagen procesada con Otsu";
 
-    // Enviar imagen procesada al servidor
-    const blobProc = dataURLtoBlob(processedDataUrl);
-    const formData = new FormData();
-    formData.append('image', blobProc, 'server_image_otsu.png');
+        const resultContainer = document.getElementById("result-image");
+        resultContainer.innerHTML = '<pre id="output">' + document.getElementById("output").textContent + '</pre>';
+        
+        const imgProc = new Image();
+        imgProc.src = processedDataUrl;
+        resultContainer.appendChild(imgProc);
 
-    const uploadResp = await fetch('/upload_image', {
-      method: 'POST',
-      body: formData
+        const blobProc = dataURLtoBlob(processedDataUrl);
+        const formData = new FormData();
+        formData.append("image", blobProc, "server_image_otsu.png");
+
+        const uploadResp = await fetch("/upload_image", {
+          method: "POST",
+          body: formData,
+        });
+        const json = await uploadResp.json();
+        document.getElementById("output").textContent += `\n${json.message}`;
+      };
+    }
+
+    document.getElementById("clientImageInput").addEventListener("change", function () {
+      if (this.files && this.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          document.getElementById("clientImagePreview").src = e.target.result;
+        };
+        reader.readAsDataURL(this.files[0]);
+      }
     });
-    const json = await uploadResp.json();
-    document.getElementById('output').textContent += `\n${json.message}`;
-  }
-}
 
-function dataURLtoBlob(dataurl) {
-  const arr = dataurl.split(',');
-  const mime = arr[0].match(/:(.*?);/)[1];
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-  while(n--) u8arr[n] = bstr.charCodeAt(n);
-  return new Blob([u8arr], {type:mime});
-}
+    async function processClientImage() {
+      const imgElem = document.getElementById("clientImagePreview");
+      if (!imgElem.src) {
+        alert("Seleccione una imagen desde su dispositivo primero.");
+        return;
+      }
 
-document.getElementById('clientImageInput').addEventListener('change', function() {
-  if(this.files && this.files[0]) {
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById('clientImagePreview').src = e.target.result;
-    };
-    reader.readAsDataURL(this.files[0]);
-  }
-});
+      const processedDataUrl = await processImage(imgElem.src);
+      document.getElementById("output").textContent = "Imagen cliente procesada con Otsu";
 
-async function processClientImage() {
-  const imgElem = document.getElementById('clientImagePreview');
-  if(!imgElem.src) {
-    alert("Seleccione una imagen desde su dispositivo primero.");
-    return;
-  }
+      const resultContainer = document.getElementById("result-image");
+      resultContainer.innerHTML = '<pre id="output">' + document.getElementById("output").textContent + '</pre>';
 
-  const processedDataUrl = await processImage(imgElem.src);
-  document.getElementById('output').textContent = "Imagen cliente procesada con Otsu";
+      const imgProc = new Image();
+      imgProc.src = processedDataUrl;
+      resultContainer.appendChild(imgProc);
 
-  // Mostrar imagen procesada
-  const imgProc = new Image();
-  imgProc.src = processedDataUrl;
-  document.body.appendChild(imgProc);
+      const blobProc = dataURLtoBlob(processedDataUrl);
+      const formData = new FormData();
+      formData.append("image", blobProc, "client_image_otsu.png");
 
-  // Enviar imagen procesada al servidor
-  const blobProc = dataURLtoBlob(processedDataUrl);
-  const formData = new FormData();
-  formData.append('image', blobProc, 'client_image_otsu.png');
-
-  const uploadResp = await fetch('/upload_image', {
-    method: 'POST',
-    body: formData
-  });
-  const json = await uploadResp.json();
-  document.getElementById('output').textContent += `\n${json.message}`;
-}
-</script>
+      const uploadResp = await fetch("/upload_image", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await uploadResp.json();
+      document.getElementById("output").textContent += `\n${json.message}`;
+    }
+  </script>
 </body>
 </html>
+
