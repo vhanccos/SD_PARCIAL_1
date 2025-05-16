@@ -41,7 +41,18 @@
         <div id="result-image" class="card-image">
           <pre id="output">Esperando procesamiento...</pre>
         </div>
+          <button id="downloadBtn" style="display: none" onclick="descargarImagen()">Descargar imagen</button>
+          <button id="uploadBtn" style="display: none;">Enviar imagen al servidor</button>
       </section>
+      <section>
+        <h2>4) Imágenes procesadas en el servidor</h2>
+        <ul>
+          {% for img in processed_images %}
+          <li><a href="{{ url_for('static', filename='processed/' + img) }}" target="_blank">{{ img }}</a></li>
+          {% endfor %}
+        </ul>
+      </section>
+
     </main>
 
     <script>
@@ -77,6 +88,12 @@
             reader.readAsDataURL(this.files[0]);
           }
         });
+      document.getElementById("uploadBtn").addEventListener("click", () => {
+        const img = document.querySelector("#result-image img");
+        if (img) {
+          enviarImagenAlServidor(img.src, "otsu_cliente.png");
+        }
+      });
 
       function dataURLtoBlob(dataurl) {
         const arr = dataurl.split(",");
@@ -187,7 +204,39 @@ result = otsu_threshold(img_bytes)
         const imgProc = new Image();
         imgProc.src = dataUrl;
         resultContainer.appendChild(imgProc);
+       document.getElementById("downloadBtn").style.display = "block";
+       document.getElementById("uploadBtn").style.display = "block";
       }
+
+      function descargarImagen() {
+        const img = document.querySelector("#result-image img");
+        if (!img) return;
+      
+        const a = document.createElement("a");
+        a.href = img.src;
+        a.download = "imagen_segmentada.png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      async function enviarImagenAlServidor(dataUrl, filename = "procesada.png") {
+        const response = await fetch("/upload_processed", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            image: dataUrl,
+            filename: filename,
+          }),
+        });
+      
+        const result = await response.json();
+        alert(result.message || "Imagen enviada al servidor.");
+      }
+
+
     </script>
   </body>
 </html>
